@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>벅스 음원 수집 도구</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    textarea { width: 100%; height: 150px; margin-bottom: 10px; }
+    button { padding: 8px 16px; font-size: 14px; margin-right: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f8f8f8; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    input[type="checkbox"] { transform: scale(1.2); margin: 0; }
+  </style>
+</head>
+<body>
+  <h1>벅스 음원 수집 도구</h1>
+  <p>곡명\t아티스트명 형식으로 붙여넣고 버튼을 클릭하세요.</p>
+  <textarea id="input" placeholder="곡명    아티스트명\nGolden    헌트릭스\n..."></textarea>
+  <div>
+    <button id="load-sample">예시 텍스트 넣기</button>
+    <button id="generate">URL 생성</button>
+  </div>
+  <table id="results">
+    <thead>
+      <tr>
+        <th>추가됨</th>
+        <th>곡명</th>
+        <th>아티스트</th>
+        <th>곡 검색 URL</th>
+        <th>아티스트 검색 URL</th>
+        <th>조합 검색 URL</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <script>
+    const sampleText = `Golden	헌트릭스
+Your Idol	사자 보이즈
+뛰어	블랙핑크
+스트래티지	트와이스
+APT	로제(블핑)
+WHO	지민(방탄)
+Standing Next to You	정국(방탄)
+Seven	정국(방탄) feat.Latto
+Like Crazy	지민(방탄)
+MOONLIGHT SUNRISE	트와이스
+Shut Down	블랙핑크
+Pink Venom	블랙핑크
+My Universe	방탄소년단
+Butter	방탄소년단
+"Ice Cream
+(with Selena Gomez)"	"BLACKPINK
+셀레나 고메즈"
+"Savage Love
+(Laxed - Siren Beat) [BTS Remix]"	"조쉬 685
+제이슨 데룰로
+방탄소년단"
+Dynamite	방탄소년단
+Sour Candy	"레이디 가가
+BLACKPINK"
+Kiss and Make Up	"두아 리파
+BLACKPINK"
+뚜두뚜두 (DDU-DU DDU-DU)	블랙핑크`;
+
+    const textarea = document.getElementById('input');
+    document.getElementById('load-sample').addEventListener('click', () => {
+      textarea.value = sampleText;
+    });
+
+    document.getElementById('generate').addEventListener('click', () => {
+      const tbody = document.querySelector('#results tbody');
+      tbody.innerHTML = '';
+      const lines = textarea.value.trim().split(/\r?\n/);
+      lines.forEach(line => {
+        const cols = line.split(/\t/);
+        if (cols.length < 2) return;
+        const title = cols[0].trim();
+        const artist = cols[1].trim();
+        const base = 'https://music.bugs.co.kr/search/track?q=';
+        const urlTitle = base + encodeURIComponent(title);
+        const urlArtist = base + encodeURIComponent(artist);
+        const urlBoth = base + encodeURIComponent(`${title} ${artist}`);
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><input type=\"checkbox\"></td>
+          <td>${title}</td>
+          <td>${artist}</td>
+          <td><a href=\"${urlTitle}\" target=\"_blank\">검색</a></td>
+          <td><a href=\"${urlArtist}\" target=\"_blank\">검색</a></td>
+          <td><a href=\"${urlBoth}\" target=\"_blank\">검색</a></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+  </script>
+</body>
+</html>
