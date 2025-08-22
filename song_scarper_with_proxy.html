@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>🐞 곡 정보 수집기 (Proxy 지원)</title>
+  <style>
+    :root{--bg:#0b1020;--card:#121733;--ink:#e8ebff;--muted:#a7b0d9;--accent:#7aa2ff;--ok:#53d397;--warn:#ffcc66;--bad:#ff6b88}
+    html,body{height:100%}
+    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,Pretendard,sans-serif;background:linear-gradient(180deg,#0b1020,#0e1430 40%,#0b1020);color:var(--ink)}
+    .container{max-width:1100px;margin:24px auto;padding:0 20px}
+    h1{font-size:28px;margin:8px 0 4px}
+    h2{font-size:18px;color:var(--muted);font-weight:500;margin:0 0 16px}
+    .card{background:var(--card);border:1px solid rgba(255,255,255,.06);box-shadow:0 10px 30px rgba(0,0,0,.35);border-radius:16px}
+    .row{display:flex;gap:14px;flex-wrap:wrap}
+    .col{flex:1;min-width:260px}
+    textarea,input,select{width:100%;box-sizing:border-box;background:#0c1230;border:1px solid rgba(255,255,255,.08);color:var(--ink);padding:12px 14px;border-radius:12px;outline:none}
+    textarea{min-height:160px;resize:vertical}
+    label{display:block;margin:10px 4px 6px;color:var(--muted);font-size:13px}
+    .btn{display:inline-flex;align-items:center;gap:8px;background:#1a235a;color:#eaf; padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.08);cursor:pointer;user-select:none}
+    .btn:hover{filter:brightness(1.1)}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn.primary{background:linear-gradient(90deg,#4769ff,#8a9dff)}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap}
+    .pill{font-size:12px;padding:6px 10px;border-radius:999px;background:#0c1230;border:1px solid rgba(255,255,255,.08);color:var(--muted)}
+    table{width:100%;border-collapse:separate;border-spacing:0 10px}
+    th,td{text-align:left;padding:10px 12px}
+    thead th{font-size:12px;color:var(--muted);font-weight:600}
+    tbody tr{background:#0c1230;border:1px solid rgba(255,255,255,.08)}
+    tbody tr td:first-child{border-top-left-radius:10px;border-bottom-left-radius:10px}
+    tbody tr td:last-child{border-top-right-radius:10px;border-bottom-right-radius:10px}
+    code.inline{background:#0c1230;border:1px solid rgba(255,255,255,.08);padding:2px 6px;border-radius:6px}
+    .status{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+    .dot{width:8px;height:8px;border-radius:50%}
+    .ok{color:var(--ok)} .ok .dot{background:var(--ok)}
+    .bad{color:var(--bad)} .bad .dot{background:var(--bad)}
+    .warn{color:var(--warn)} .warn .dot{background:var(--warn)}
+    .muted{color:var(--muted)}
+    .small{font-size:12px}
+    .sticky{position:sticky;top:0;background:linear-gradient(180deg,rgba(11,16,32,.98),rgba(11,16,32,.85));backdrop-filter:blur(6px);z-index:10;border-bottom:1px solid rgba(255,255,255,.06)}
+    .log{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0c1230;border:1px dashed rgba(255,255,255,.12);padding:12px;border-radius:12px;white-space:pre-wrap;max-height:180px;overflow:auto}
+    .kbd{font-family:ui-monospace,Menlo,monospace;background:#11173a;border:1px solid rgba(255,255,255,.14);padding:2px 6px;border-radius:6px}
+    .help-list{margin:8px 0 0 18px; color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="sticky">
+    <div class="container" style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px">
+      <div>
+        <h1>🐞 곡 정보 수집기 (Proxy 지원)</h1>
+        <h2>곡ID · 곡명 · 아티스트 · 발매일 · 실시간 가사 여부 자동 추출</h2>
+      </div>
+      <div class="toolbar">
+        <button class="btn" id="btnSample">샘플 입력</button>
+        <button class="btn" id="btnClear">초기화</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container" style="display:grid;grid-template-columns:1.2fr .8fr;gap:16px;align-items:start">
+    <div class="card" style="padding:18px">
+      <label for="bulk">대량 입력 (곡명 / 아티스트) — 줄마다 한 곡</label>
+      <textarea id="bulk" placeholder="예)
+운명 (2025)\t먼데이 키즈, 이이경
+다른 노래 제목 - 아티스트명
+곡제목 | 가수명"></textarea>
+
+      <div class="row" style="margin-top:10px">
+        <div class="col">
+          <label>구분자 (자동 감지 권장)</label>
+          <select id="sep">
+            <option value="auto">자동 감지</option>
+            <option value="tab">탭 (\t)</option>
+            <option value="hyphen">하이픈 (-)</option>
+            <option value="pipe">파이프 (|)</option>
+            <option value="comma">콤마 (,)</option>
+          </select>
+        </div>
+        <div class="col">
+          <label>처리 간격 (ms) — 요청 간 딜레이</label>
+          <input id="delay" type="number" min="0" step="50" value="5000" />
+        </div>
+      </div>
+
+      <div class="toolbar" style="margin-top:12px">
+        <button class="btn primary" id="btnRun">순차 처리 시작</button>
+        <label class="small muted" style="display:inline-flex;align-items:center;gap:6px">
+          <input type="checkbox" id="useProxy" checked> CORS 프록시 사용(권장)
+        </label>
+        <span class="pill" id="progress">대기 중</span>
+      </div>
+
+      <div style="margin-top:12px" class="small muted">
+        <div class="status warn"><span class="dot"></span>브라우저 CORS 정책에 따라 <b>검색/페이지 파싱</b> 요청이 차단될 수 있습니다. 아래 “프록시 설정”을 참고하세요.</div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:700">결과 내보내기</div>
+          <div class="small muted">각 곡 복사 · JSON 일괄 출력</div>
+        </div>
+        <div class="toolbar">
+          <button class="btn" id="btnCopyJSON">모든 곡 JSON 복사</button>
+          <button class="btn" id="btnDownloadJSON">JSON 파일 저장</button>
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <textarea id="jsonOut" style="min-height:140px" placeholder='{"songs": [ ... ]}'></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="container card" style="margin-top:16px;padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="font-weight:700">처리 결과</div>
+      <div class="toolbar">
+        <button class="btn" id="btnClearTable">결과 비우기</button>
+      </div>
+    </div>
+    <div style="overflow:auto">
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>입력 곡명</th>
+            <th>입력 아티스트</th>
+            <th>곡ID</th>
+            <th>곡명</th>
+            <th>아티스트</th>
+            <th>발매일</th>
+            <th>실시간가사</th>
+            <th>작업</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="container card" style="margin:16px auto;padding:16px">
+    <details open>
+      <summary><b>프록시 설정 (CORS 우회)</b></summary>
+      <div class="small" style="margin-top:8px;line-height:1.6">
+        <ul class="help-list">
+          <li>기본적으로 <b>AllOrigins</b>와 <b>Jina reader</b>를 시도하고, 실패 시 <b>직접 요청</b>으로 폴백합니다.</li>
+          <li>직접 프록시 프리픽스를 쓰고 싶다면 아래 입력란에 넣어주세요. (예: <span class="kbd">https://cors.isomorphic-git.org/</span>)</li>
+          <li>가능하면 <b>크롬</b>에서 <span class="kbd">--disable-web-security --user-data-dir</span> 옵션이나 <b>Allow CORS</b> 확장도 병행하면 안정적입니다.</li>
+        </ul>
+        <label style="margin-top:8px">프록시 프리픽스 (선택)</label>
+        <input id="proxy" placeholder="입력 시 모든 요청에 프리픽스를 붙입니다 (예: https://cors.isomorphic-git.org/)" />
+      </div>
+    </details>
+  </div>
+
+  <div class="container card" style="margin:16px auto;padding:16px">
+    <details open>
+      <summary><b>동작 원리</b></summary>
+      <div class="small" style="margin-top:8px;line-height:1.7">
+        <ul class="help-list">
+          <li><b>검색</b>: <code class="inline">/search/track?q=제목+아티스트</code> 페이지에서 <code class="inline">/track/123456</code> 링크를 파싱합니다. (프록시 사용)</li>
+          <li><b>곡→앨범</b>: <code class="inline">/track/{곡ID}</code>에서 <code class="inline">/album/{앨범ID}</code>를 추출합니다. (텍스트/DOM 겸용 파싱)</li>
+          <li><b>발매일</b>: <code class="inline">/album/{앨범ID}</code>의 “발매일 YYYY.MM.DD” 문자열을 감지해 <code class="inline">YYYY-MM-DD</code>로 표준화합니다.</li>
+          <li><b>실시간 가사</b>: <code class="inline">/player/lyrics/T/{곡ID}</code> JSON을 조회합니다. 비어 있으면 <code class="inline">{"lyrics":"","userId":null}</code>, 값이 있으면 <code class="inline">lyrics</code>가 채워집니다.</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+
+  <div class="container" style="margin:30px auto 60px" id="logsWrap">
+    <div style="font-weight:700;margin-bottom:8px">로그</div>
+    <div id="logs" class="log"></div>
+  </div>
+
+<script>
+(function(){
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+  const sleep = ms => new Promise(r=>setTimeout(r, ms));
+
+  const state = {
+    rows: [], // { idx, inputTitle, inputArtist, trackId, title, artists, releaseDate, lyricsExists, lyricsUserId }
+  };
+
+  function log(msg){
+    const el = $('#logs');
+    const ts = new Date().toLocaleString();
+    el.textContent += `[${ts}] ${msg}\n`;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function sanitizeText(s){
+    return (s||'').replace(/\s+/g,' ').trim();
+  }
+
+  function detectSep(line){
+    const scores = [
+      ['\t','tab'], [' - ','hyphen'], ['|','pipe'], [',','comma']
+    ].map(([sym,name])=>({name, count:(line.split(sym).length-1)}));
+    scores.sort((a,b)=>b.count-a.count);
+    return scores[0].count>0 ? scores[0].name : 'tab';
+  }
+
+  function parseBulk(){
+    const raw = $('#bulk').value.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+    const choice = $('#sep').value;
+    const rows = [];
+    for (const line of raw){
+      let sepKind = choice==='auto' ? detectSep(line) : choice;
+      let title='', artist='';
+      if (sepKind==='tab') [title,artist] = line.split('\t');
+      else if (sepKind==='hyphen') [title,artist] = line.split(' - ');
+      else if (sepKind==='pipe') [title,artist] = line.split('|');
+      else if (sepKind==='comma') [title,artist] = line.split(',');
+      title = sanitizeText(title||''); artist = sanitizeText(artist||'');
+      if(!title||!artist) log(`⚠️ 구문 분석 실패: "${line}" → 제목/아티스트를 확인`);
+      rows.push({inputTitle:title,inputArtist:artist});
+    }
+    return rows;
+  }
+
+  function toYYYYMMDD(dots){
+    if(!dots) return '';
+    const m = dots.match(/(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
+    if(!m) return '';
+    const [_,y,mo,da] = m;
+    const mm = String(mo).padStart(2,'0');
+    const dd = String(da).padStart(2,'0');
+    return `${y}-${mm}-${dd}`;
+  }
+
+  // ===== Proxy helpers =====
+  function prox(url){
+    const p = $('#proxy')?.value?.trim();
+    if(!p) return url;
+    return p + url; // e.g., https://cors.isomorphic-git.org/ + https://music.bugs.co.kr/...
+  }
+
+  async function fetchText(url){
+    const useProxy = !!document.querySelector('#useProxy')?.checked;
+    const attempts = [];
+    const pref = prox(url);
+    if(useProxy && pref !== url){ attempts.push(() => fetch(pref, { credentials:'omit' })); }
+    if(useProxy){ attempts.push(() => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, { credentials:'omit' })); }
+    if(useProxy){ attempts.push(() => fetch(`https://r.jina.ai/http://${url.replace(/^https?:\/\//,'')}`, { credentials:'omit' })); }
+    attempts.push(() => fetch(url, { credentials:'omit' }));
+
+    let lastErr;
+    for(const tryFn of attempts){
+      try{
+        const res = await tryFn();
+        if(!res.ok) { lastErr = new Error(`HTTP ${res.status} for ${url}`); continue; }
+        return await res.text();
+      }catch(e){ lastErr = e; }
+    }
+    throw lastErr || new Error('fetchText: 모든 시도 실패');
+  }
+
+  async function fetchJSON(url){
+    const useProxy = !!document.querySelector('#useProxy')?.checked;
+    const attempts = [];
+    const pref = prox(url);
+    if(useProxy && pref !== url){ attempts.push(async ()=>{ const r = await fetch(pref, { credentials:'omit' }); if(!r.ok) throw new Error(`HTTP ${r.status} for ${url}`); const t = await r.text(); return JSON.parse(t); }); }
+    if(useProxy){ attempts.push(async ()=>{ const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, { credentials:'omit' }); if(!r.ok) throw new Error(`HTTP ${r.status} for ${url}`); const t = await r.text(); return JSON.parse(t); }); }
+    attempts.push(async ()=>{ const r = await fetch(url, { credentials:'omit' }); if(!r.ok) throw new Error(`HTTP ${r.status} for ${url}`); return await r.json(); });
+
+    let lastErr;
+    for(const fn of attempts){
+      try{ return await fn(); }catch(e){ lastErr = e; }
+    }
+    throw lastErr || new Error('fetchJSON: 모든 시도 실패');
+  }
+
+  function extractAlbumIdFromTrack(html){
+    try{
+      const doc = new DOMParser().parseFromString(html,'text/html');
+      const a = Array.from(doc.querySelectorAll('a')).find(x=>/\/album\/(\d+)/.test(x.getAttribute('href')||''));
+      if(a){ const m=a.getAttribute('href').match(/\/album\/(\d+)/); if(m) return m[1]; }
+    }catch(_){}
+    const m2 = html && html.match(/\balbum\/(\d{5,12})\b/);
+    return m2?m2[1]:null;
+  }
+
+  function extractMetaFromTrack(html){
+    try{
+      const doc = new DOMParser().parseFromString(html,'text/html');
+      const title = sanitizeText(doc.querySelector('meta[property="og:title"]')?.getAttribute('content') || doc.querySelector('h1')?.textContent || '');
+      const artist = sanitizeText((doc.querySelector('.artist a')?.textContent) || (doc.querySelector('meta[name="keywords"]')?.getAttribute('content')||'').split(',')[0] || '');
+      if(title || artist) return { title, artist };
+    }catch(_){}
+    // Plain text fallback (best-effort)
+    const t = html || '';
+    const titleM = t.match(/제목\s*[:\-]?\s*([^\n]+)/) || t.match(/Title\s*[:\-]?\s*([^\n]+)/i);
+    const artistM = t.match(/아티스트\s*[:\-]?\s*([^\n]+)/) || t.match(/Artist\s*[:\-]?\s*([^\n]+)/i);
+    return { title: sanitizeText(titleM?.[1]||''), artist: sanitizeText(artistM?.[1]||'') };
+  }
+
+  function extractReleaseFromAlbum(html){
+  // Try DOM first
+  let textOnly = html;
+  try{
+    const doc = new DOMParser().parseFromString(html,'text/html');
+
+    // 1) <time datetime> or <time> content
+    const times = Array.from(doc.querySelectorAll('time[datetime], time'))
+      .map(t => (t.getAttribute('datetime') || t.textContent || '').trim())
+      .filter(Boolean);
+    for(const t of times){
+      const m = t.match(/(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/);
+      if(m){ return toYYYYMMDD(`${m[1]}.${m[2]}.${m[3]}`); }
+    }
+
+    // 2) meta tags that might carry release date
+    const metas = Array.from(doc.querySelectorAll('meta')).map(m => m.getAttribute('content') || '').filter(Boolean);
+    for(const c of metas){
+      const m = c.match(/(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/);
+      if(m){ return toYYYYMMDD(`${m[1]}.${m[2]}.${m[3]}`); }
+    }
+
+    // 3) Fallback to full text
+    textOnly = (doc.body.textContent || html);
+  }catch(_){ /* ignore */ }
+
+  // Robust Korean label patterns with flexible separators & spaces
+  // e.g., "발매일 : 2025. 07. 27", "발매 2024-1-5", "발매일 2020/12/31"
+  const labelRe = /(발매일|발매)\s*[:\-]?\s*(\d{4}\s*[.\-\/]\s*\d{1,2}\s*[.\-\/]\s*\d{1,2})/;
+  let m = textOnly && textOnly.match(labelRe);
+  if(m){ return toYYYYMMDD(m[2].replace(/\s*/g,'')); }
+
+  // As a last resort, grab the first date-like pattern anywhere on page
+  const anyDate = textOnly && textOnly.match(/(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/);
+  if(anyDate){ return toYYYYMMDD(`${anyDate[1]}.${anyDate[2]}.${anyDate[3]}`); }
+
+  return '';
+}
+
+  function pickBestTrack(html, wantTitle, wantArtist){
+    try{
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const anchors = Array.from(doc.querySelectorAll('a'))
+        .filter(a=>/\/track\/\d+/.test(a.getAttribute('href')||''));
+      const seen = new Set();
+      const candidates = [];
+      for(const a of anchors){
+        const href=a.getAttribute('href');
+        const m=href&&href.match(/\/track\/(\d+)/);
+        if(!m) continue; const id=m[1];
+        if(seen.has(id)) continue; seen.add(id);
+        const ctx = (a.closest('tr')?.textContent || a.closest('.info')?.textContent || a.textContent || '').replace(/\s+/g,' ').trim();
+        candidates.push({id, ctx});
+      }
+      if(candidates.length){
+        const t = (wantTitle||'').toLowerCase();
+        const ar = (wantArtist||'').toLowerCase();
+        for(const c of candidates){ c.score = (c.ctx.toLowerCase().includes(t)?2:0) + (c.ctx.toLowerCase().includes(ar)?2:0); }
+        candidates.sort((a,b)=>b.score-a.score);
+        return candidates[0];
+      }
+    }catch(_){}
+    const m = html && html.match(/\btrack\/(\d{6,12})\b/);
+    return m ? { id: m[1], ctx: '' } : null;
+  }
+
+  function addRowView(row){
+    const tbody = $('#tbl tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.idx}</td>
+      <td>${row.inputTitle||''}</td>
+      <td>${row.inputArtist||''}</td>
+      <td>${row.trackId?`<a href="https://music.bugs.co.kr/track/${row.trackId}" target="_blank" rel="noreferrer">${row.trackId}</a>`:''}</td>
+      <td>${row.title||''}</td>
+      <td>${row.artists||''}</td>
+      <td>${row.releaseDate||''}</td>
+      <td>${row.lyricsExists?'<span class="status ok"><span class="dot"></span>있음</span>':'<span class="status bad"><span class="dot"></span>없음</span>'}</td>
+      <td>
+        <button class="btn small copy-json">JSON 복사</button>
+        <button class="btn small copy-tsv">TSV 복사</button>
+        <button class="btn small retry">재시도/수정</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+
+    tr.querySelector('.copy-json').addEventListener('click',()=>copyRowJSON(row));
+    tr.querySelector('.copy-tsv').addEventListener('click',()=>copyRowTSV(row));
+    tr.querySelector('.retry').addEventListener('click',()=>retryRow(row));
+  }
+
+  function copy(text){
+    navigator.clipboard.writeText(text).then(()=>{
+      log('📋 복사 완료');
+    }).catch(()=>{
+      const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      log('📋 복사 시도(폴백) 완료');
+    });
+  }
+
+  function copyRowJSON(row){
+    const obj = toSongObject(row);
+    copy(JSON.stringify(obj, null, 2));
+  }
+
+  function copyRowTSV(row){
+    const fields = [row.trackId,row.title,row.artists,row.releaseDate];
+    copy(fields.map(x=>x??'').join('\t'));
+  }
+
+  function toSongObject(row){
+    return {
+      id: row.trackId,
+      title: row.title,
+      artists: row.artists,
+      releaseDate: row.releaseDate,
+      lyrics: row.lyricsExists ? 'present' : '',
+      lyricsUserId: row.lyricsUserId || null
+    };
+  }
+
+  function renderJSONOut(){
+    const songs = state.rows.filter(r=>r.trackId).map(toSongObject);
+    $('#jsonOut').value = JSON.stringify({ songs }, null, 2);
+  }
+
+  async function processOne(idx, inputTitle, inputArtist){
+    const q = encodeURIComponent(`${inputTitle} ${inputArtist}`);
+    const searchURL = `https://music.bugs.co.kr/search/track?q=${q}`;
+    log(`🔎 검색: ${inputTitle} / ${inputArtist}`);
+    let searchHTML;
+    try{ searchHTML = await fetchText(searchURL); }
+    catch(e){ log(`❌ 검색 실패: ${e.message}`); throw e; }
+
+    const best = pickBestTrack(searchHTML, inputTitle, inputArtist);
+    if(!best){ throw new Error('검색 결과에서 곡ID를 찾지 못함'); }
+    const trackId = best.id;
+
+    const trackURL = `https://music.bugs.co.kr/track/${trackId}`;
+    let trackHTML;
+    try{ trackHTML = await fetchText(trackURL); }
+    catch(e){ log(`❌ 트랙 페이지 실패: ${e.message}`); throw e; }
+
+    const {title, artist} = extractMetaFromTrack(trackHTML);
+
+    const albumId = extractAlbumIdFromTrack(trackHTML);
+    if(!albumId) log('⚠️ 앨범ID를 트랙 페이지에서 찾지 못했습니다. (페이지 구조/프록시에 따라 미검출 가능)');
+    let releaseDate = '';
+    if(albumId){
+      const albumURL = `https://music.bugs.co.kr/album/${albumId}`;
+      try{
+        const albumHTML = await fetchText(albumURL);
+        releaseDate = extractReleaseFromAlbum(albumHTML);
+      }catch(e){ log(`⚠️ 앨범 페이지 실패: ${e.message}`); }
+    }
+
+    // Lyrics JSON
+    let hasLyrics=false, lyricUser=null;
+    try{
+      const lyr = await fetchJSON(`https://music.bugs.co.kr/player/lyrics/T/${trackId}`);
+      hasLyrics = !!(lyr && typeof lyr.lyrics === 'string' && lyr.lyrics.length>0);
+      lyricUser = lyr ? lyr.userId ?? null : null;
+    }catch(e){ log(`⚠️ 실시간 가사 조회 실패(권한/CORS 가능): ${e.message}`); }
+
+    return {
+      idx,
+      inputTitle,
+      inputArtist,
+      trackId,
+      title: title || inputTitle,
+      artists: artist || inputArtist,
+      releaseDate: releaseDate || '',
+      lyricsExists: hasLyrics,
+      lyricsUserId: lyricUser
+    };
+  }
+
+  async function run(){
+    const rows = parseBulk();
+    if(rows.length===0){ alert('입력할 곡이 없습니다.'); return; }
+    $('#btnRun').disabled = true;
+    $('#progress').textContent = `처리 중 (0/${rows.length})`;
+    const delay = Math.max(0, parseInt($('#delay').value||'700',10));
+    for(let i=0;i<rows.length;i++){
+      const {inputTitle,inputArtist} = rows[i];
+      try{
+        const r = await processOne(i+1, inputTitle, inputArtist);
+        state.rows.push(r); addRowView(r); renderJSONOut();
+        log(`✅ 성공: ${r.title} (${r.trackId})`);
+      }catch(e){
+        const fail = { idx:i+1, inputTitle, inputArtist, trackId:'', title:'', artists:'', releaseDate:'', lyricsExists:false };
+        state.rows.push(fail); addRowView(fail); renderJSONOut();
+        log(`⛔ 실패: ${inputTitle} / ${inputArtist} → ${e.message}`);
+      }
+      $('#progress').textContent = `처리 중 (${i+1}/${rows.length})`;
+      if(i<rows.length-1) await sleep(delay);
+    }
+    $('#progress').textContent = `완료 (${rows.length}/${rows.length})`;
+    $('#btnRun').disabled = false;
+  }
+
+  function retryRow(row){
+    const user = prompt('재시도 옵션:\n- Bugs 곡ID만 입력하면 ID로 재조회합니다.\n- 비우면 기존 입력(제목/아티스트)로 재검색합니다.', '');
+    (async()=>{
+      try{
+        let r;
+        if(user && /^(\d{4,})$/.test(user.trim())){
+          const id=user.trim();
+          log(`🔁 곡ID로 재조회: ${id}`);
+          const idx = row.idx;
+          const trackHTML = await fetchText(`https://music.bugs.co.kr/track/${id}`);
+          const meta = extractMetaFromTrack(trackHTML);
+          const albumId = extractAlbumIdFromTrack(trackHTML);
+          let releaseDate='';
+          if(albumId){
+            const albumHTML=await fetchText(`https://music.bugs.co.kr/album/${albumId}`);
+            releaseDate = extractReleaseFromAlbum(albumHTML);
+          }
+          let hasLyrics=false, lyricUser=null;
+          try{
+            const lyr=await fetchJSON(`https://music.bugs.co.kr/player/lyrics/T/${id}`);
+            hasLyrics = !!(lyr && lyr.lyrics && lyr.lyrics.length>0);
+            lyricUser = lyr? lyr.userId ?? null : null;
+          }catch{}
+          r = {idx, inputTitle:row.inputTitle, inputArtist:row.inputArtist, trackId:id, title:meta.title, artists:meta.artist, releaseDate, lyricsExists:hasLyrics, lyricsUserId:lyricUser};
+        }else{
+          log(`🔁 제목/아티스트로 재검색: ${row.inputTitle} / ${row.inputArtist}`);
+          r = await processOne(row.idx, row.inputTitle, row.inputArtist);
+        }
+        state.rows[row.idx-1] = r;
+        $('#tbl tbody').innerHTML='';
+        state.rows.forEach(addRowView);
+        renderJSONOut();
+      }catch(e){
+        alert('재시도 실패: '+e.message);
+      }
+    })();
+  }
+
+  // UI wiring
+  $('#btnRun').addEventListener('click', run);
+  $('#btnClear').addEventListener('click', ()=>{ $('#bulk').value=''; $('#logs').textContent=''; state.rows=[]; $('#tbl tbody').innerHTML=''; renderJSONOut(); $('#progress').textContent='대기 중'; });
+  $('#btnSample').addEventListener('click', ()=>{
+    $('#bulk').value = `운명 (2025)\t먼데이 키즈, 이이경\n비의 랩소디 - 임재범\n사건의 지평선 | 윤하`;
+  });
+  $('#btnCopyJSON').addEventListener('click', ()=>copy($('#jsonOut').value||''));
+  $('#btnDownloadJSON').addEventListener('click', ()=>{
+    const blob = new Blob([$('#jsonOut').value||'{"songs":[]}'], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'bugs_songs.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  $('#btnClearTable').addEventListener('click', ()=>{ state.rows=[]; $('#tbl tbody').innerHTML=''; renderJSONOut(); });
+})();
+</script>
+</body>
+</html>
