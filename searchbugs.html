@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>벅스 음원 수집 도구</title>
+  <title>벅스와 내가 원하는 곳에서 노래 찾기 도구</title>
   <style>
     body { font-family: sans-serif; padding: 20px; }
     textarea { width: 100%; height: 150px; margin-bottom: 10px; }
@@ -16,10 +16,22 @@
   </style>
 </head>
 <body>
-  <h1>벅스 음원 수집 도구</h1>
+  <h1>벅스와 내가 원하는 곳에서 노래 찾기 도구</h1>
   <p>곡명\t아티스트명 형식으로 붙여넣고 버튼을 클릭하세요.</p>
   <textarea id="input" placeholder="곡명    아티스트명\nGolden    헌트릭스\n..."></textarea>
-  <div>
+  <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #ccc;">
+    <h2>커스텀 검색 관리</h2>
+    <p style="color: gray; font-style: italic;">너무 빨리 클릭하면 검색하는 곳이 아파요</p>
+    <p>URL 템플릿에 <code>%%TITLE%%</code>과 <code>%%ARTIST%%</code>를 사용하여 동적 URL을 만드세요.</p>
+    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+      <input type="text" id="custom-search-name" placeholder="검색 이름 (예: 내 사이트)" style="flex: 1; padding: 6px;">
+      <input type="text" id="custom-url-template" placeholder="URL 템플릿" style="flex: 3; padding: 6px;">
+      <button id="add-custom-search" style="padding: 6px 12px;">추가</button>
+    </div>
+    <div id="custom-search-list"></div>
+  </div>
+
+  <div style="margin-top:20px;">
     <button id="load-sample">예시 텍스트 넣기</button>
     <button id="generate">URL 생성</button>
   </div>
@@ -37,6 +49,98 @@
     <tbody></tbody>
   </table>
   <script>
+    // --- Element selectors and state variables ---
+    const customSearchNameInput = document.getElementById('custom-search-name');
+    const customUrlTemplateInput = document.getElementById('custom-url-template');
+    const addCustomSearchBtn = document.getElementById('add-custom-search');
+    const customSearchListDiv = document.getElementById('custom-search-list');
+    const resultsTableHeadRow = document.querySelector('#results thead tr');
+    const textarea = document.getElementById('input');
+    let originalTableHeaders = null; // To store the base headers
+
+    // --- Local Storage functions ---
+    const getCustomSearches = () => {
+        return JSON.parse(localStorage.getItem('customSearches') || '[]');
+    };
+
+    const saveCustomSearches = (searches) => {
+        localStorage.setItem('customSearches', JSON.stringify(searches));
+        renderAll(); // Re-render everything after saving
+    };
+
+    // --- UI Rendering functions ---
+    const renderCustomSearchList = () => {
+        const searches = getCustomSearches();
+        customSearchListDiv.innerHTML = '';
+        searches.forEach((search, index) => {
+            const div = document.createElement('div');
+            div.style = 'display: flex; gap: 10px; margin-bottom: 5px; align-items: center; padding: 5px; border: 1px solid #eee;';
+            div.innerHTML = `
+                <strong style="flex: 1;">${search.name}</strong>
+                <span style="flex: 3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${search.template}">${search.template}</span>
+                <button class="remove-custom-search" data-index="${index}">삭제</button>
+            `;
+            customSearchListDiv.appendChild(div);
+        });
+
+        // Add event listeners to the new "remove" buttons
+        document.querySelectorAll('.remove-custom-search').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const index = parseInt(e.target.dataset.index, 10);
+                let searches = getCustomSearches();
+                searches.splice(index, 1);
+                saveCustomSearches(searches);
+            });
+        });
+    };
+
+    const renderTableHeaders = () => {
+        // On first run, store the original headers
+        if (!originalTableHeaders) {
+            originalTableHeaders = resultsTableHeadRow.innerHTML;
+        }
+
+        // Reset to original headers
+        resultsTableHeadRow.innerHTML = originalTableHeaders;
+
+        // Add headers for each custom search
+        const searches = getCustomSearches();
+        searches.forEach(search => {
+            const th = document.createElement('th');
+            th.textContent = search.name;
+            resultsTableHeadRow.appendChild(th);
+        });
+    };
+
+    // Main render function to update the whole UI
+    const renderAll = () => {
+        renderCustomSearchList();
+        renderTableHeaders();
+    };
+
+    // --- Event Listeners ---
+
+    // Add new custom search
+    addCustomSearchBtn.addEventListener('click', () => {
+        const name = customSearchNameInput.value.trim();
+        const template = customUrlTemplateInput.value.trim();
+
+        if (name && template) {
+            let searches = getCustomSearches();
+            if (searches.find(s => s.name === name)) {
+                alert('같은 이름의 검색이 이미 존재합니다.');
+                return;
+            }
+            searches.push({ name, template });
+            saveCustomSearches(searches);
+            customSearchNameInput.value = '';
+            customUrlTemplateInput.value = '';
+        } else {
+            alert('검색 이름과 URL 템플릿을 모두 입력하세요.');
+        }
+    });
+
+    // Load sample text
     const sampleText = `Golden	헌트릭스
 Your Idol	사자 보이즈
 뛰어	블랙핑크
@@ -65,36 +169,56 @@ Kiss and Make Up	"두아 리파
 BLACKPINK"
 뚜두뚜두 (DDU-DU DDU-DU)	블랙핑크`;
 
-    const textarea = document.getElementById('input');
     document.getElementById('load-sample').addEventListener('click', () => {
       textarea.value = sampleText;
     });
 
+    // --- FINAL: Generate URL Logic ---
     document.getElementById('generate').addEventListener('click', () => {
+      // First, re-render headers in case they changed but weren't reflected
+      renderTableHeaders();
+
       const tbody = document.querySelector('#results tbody');
       tbody.innerHTML = '';
       const lines = textarea.value.trim().split(/\r?\n/);
+      const customSearches = getCustomSearches();
+
       lines.forEach(line => {
         const cols = line.split(/\t/);
         if (cols.length < 2) return;
+
         const title = cols[0].trim();
         const artist = cols[1].trim();
         const base = 'https://music.bugs.co.kr/search/track?q=';
-        const urlTitle = base + encodeURIComponent(title);
-        const urlArtist = base + encodeURIComponent(artist);
-        const urlBoth = base + encodeURIComponent(`${title} ${artist}`);
 
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><input type=\"checkbox\"></td>
+
+        // Base columns
+        let rowHTML = `
+          <td><input type="checkbox"></td>
           <td>${title}</td>
           <td>${artist}</td>
-          <td><a href=\"${urlTitle}\" target=\"_blank\">검색</a></td>
-          <td><a href=\"${urlArtist}\" target=\"_blank\">검색</a></td>
-          <td><a href=\"${urlBoth}\" target=\"_blank\">검색</a></td>
+          <td><a href="${base}${encodeURIComponent(title)}" target="_blank">검색</a></td>
+          <td><a href="${base}${encodeURIComponent(artist)}" target="_blank">검색</a></td>
+          <td><a href="${base}${encodeURIComponent(`${title} ${artist}`)}" target="_blank">검색</a></td>
         `;
+
+        // Dynamic custom search columns
+        customSearches.forEach(search => {
+            const customUrl = search.template
+                .replace(/%%TITLE%%/g, encodeURIComponent(title))
+                .replace(/%%ARTIST%%/g, encodeURIComponent(artist));
+            rowHTML += `<td><a href="${customUrl}" target="_blank">검색</a></td>`;
+        });
+
+        tr.innerHTML = rowHTML;
         tbody.appendChild(tr);
       });
+    });
+
+    // --- Initial Load ---
+    document.addEventListener('DOMContentLoaded', () => {
+        renderAll();
     });
   </script>
 </body>
