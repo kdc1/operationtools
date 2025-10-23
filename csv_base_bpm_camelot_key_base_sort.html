@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>유사곡 정렬 웹UI | CSV 업로드 → 기준 곡 선택 → 유사도 정렬</title>
+  <style>
+    :root{
+      --bg:#0f1220; --panel:#161a2b; --muted:#8a93af; --text:#eef1ff; --accent:#6ea8fe; --accent2:#9cf0d7; --danger:#ff7a90;
+      --border:#242947;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,Pretendard,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";color:var(--text);background:linear-gradient(180deg,#0d1020,#0f1220 60%);} 
+    header{padding:24px 16px;border-bottom:1px solid var(--border);background:rgba(10,12,24,.6);backdrop-filter:saturate(140%) blur(6px);position:sticky;top:0;z-index:40}
+    .wrap{max-width:1100px;margin:0 auto;padding:20px}
+    h1{font-size:22px;margin:0 0 8px}
+    .sub{color:var(--muted);font-size:13px}
+
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:16px;margin:16px 0;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+    .row > *{flex:1 1 260px}
+
+    label{font-size:12px;color:var(--muted);display:block;margin:0 0 6px}
+    input[type="file"], select, button, input[type="text"]{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:#0f1330;color:var(--text)}
+    input[type="text"]::placeholder{color:#677199}
+    button{background:linear-gradient(180deg,#2b3a7a,#24336a);cursor:pointer;font-weight:600}
+    button:hover{filter:brightness(1.05)}
+    button.secondary{background:#192042}
+    .muted{color:var(--muted)}
+
+    .badge{display:inline-flex;gap:6px;align-items:center;font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:999px;background:#121735;color:#cfe1ff}
+    .badge.good{border-color:#2a6a4f;background:#122724;color:#9cf0d7}
+    .badge.warn{border-color:#6a2a3b;background:#261219;color:#ffb7c3}
+
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th, td{padding:10px;border-bottom:1px solid var(--border);text-align:left;font-size:14px}
+    th{font-size:12px;color:var(--muted);font-weight:600}
+    tr:hover{background:#131735}
+    .right{text-align:right}
+
+    .footer{color:#8b92b0;font-size:12px;margin-top:10px}
+
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#1a1f3f;border:1px solid var(--border);font-size:12px}
+
+    .grid{display:grid;grid-template-columns:1fr;gap:16px}
+    @media (min-width: 880px){
+      .grid{grid-template-columns: 1fr 1fr}
+    }
+    .help{font-size:12px;color:#b7c1ef;line-height:1.6}
+    code.inline{background:#121735;border:1px solid var(--border);padding:2px 6px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>유사곡 정렬 웹UI</h1>
+      <div class="sub">CSV 업로드 → 기준 곡 선택 → <b>비트(BPM) + Camelot + Key</b> 유사도 기준 정렬</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="panel">
+      <div class="grid">
+        <div>
+          <label>CSV 파일 업로드</label>
+          <input id="csvInput" type="file" accept=".csv" />
+          <div class="help" style="margin-top:8px">
+            • 예상 컬럼: <code class="inline">파일</code>, <code class="inline">아티스트 이름</code>, <code class="inline">트랙 제목</code>, <code class="inline">비트/분</code>, <code class="inline">음악 키</code>, <code class="inline">Camelot</code><br/>
+            • Camelot이 비어 있으면 <b>Key</b>로부터 자동 추정됩니다.
+          </div>
+        </div>
+        <div>
+          <label>기준 곡 선택</label>
+          <select id="trackSelect" disabled>
+            <option>CSV를 먼저 업로드하세요</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <div>
+          <label>검색(필터)</label>
+          <input type="text" id="searchBox" placeholder="파일/아티스트/트랙 제목으로 필터" />
+        </div>
+        <div>
+          <label>정렬 가중치 설정</label>
+          <div class="row" style="gap:8px">
+            <span class="badge">BPM <input style="width:64px;margin-left:8px" type="number" id="wBpm" min="0" max="1" step="0.05" value="0.35"></span>
+            <span class="badge">Camelot <input style="width:64px;margin-left:8px" type="number" id="wCamelot" min="0" max="1" step="0.05" value="0.40"></span>
+            <span class="badge">Key <input style="width:64px;margin-left:8px" type="number" id="wKey" min="0" max="1" step="0.05" value="0.25"></span>
+          </div>
+          <div class="help" style="margin-top:6px">세 가중치의 합은 자동으로 1로 정규화됩니다.</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:14px">
+        <button id="computeBtn">유사 곡 정렬</button>
+        <button id="exportBtn" class="secondary">표 결과 CSV로 내보내기</button>
+        <span class="muted" id="status"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="row" style="align-items:flex-end">
+        <div style="flex:1 1 auto">
+          <div class="badge">불러온 트랙 수: <span id="count" style="margin-left:6px">0</span></div>
+          <div class="badge" style="margin-left:8px">기준 곡: <span id="anchor" style="margin-left:6px">-</span></div>
+        </div>
+        <div class="muted">* 유사도 = 가중합( BPM 근접도, Camelot 조화도, Key 일치도 )</div>
+      </div>
+
+      <table id="resultTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>파일</th>
+            <th>아티스트</th>
+            <th>트랙</th>
+            <th class="right">BPM</th>
+            <th>Key</th>
+            <th>Camelot(추정)</th>
+            <th class="right">유사도</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="footer">Camelot 기준: 동일(1.0) · 같은 번호 A/B 전환(0.9) · 인접 번호 같은 글자(0.85) · 인접 번호 A/B 전환(0.75) · 두 칸 같은 글자(0.6) · 기타(0.3)</div>
+    </section>
+  </main>
+
+  <script>
+    // --- CSV 파서 (따옴표 포함 간단 처리) ---
+    function parseCSV(text){
+      const rows=[]; let cur=[], field="", inQ=false; for(let i=0;i<text.length;i++){
+        const c=text[i], n=text[i+1];
+        if(c==='"'){
+          if(inQ && n==='"'){ field+='"'; i++; } else { inQ=!inQ; }
+        } else if(c===',' && !inQ){ cur.push(field); field=""; }
+        else if((c==='\n' || c==='\r') && !inQ){ if(field!==""||cur.length>0){cur.push(field); rows.push(cur); cur=[]; field="";} }
+        else { field+=c; }
+      }
+      if(field!==""||cur.length>0){cur.push(field); rows.push(cur);} 
+      return rows;
+    }
+
+    // --- 컬럼명 정규화 ---
+    const headerAliases = {
+      file:["파일","file","파일명","filename","track file"],
+      artist:["아티스트 이름","artist","가수","singer"],
+      title:["트랙 제목","title","track","곡명"],
+      bpm:["비트/분","bpm","tempo","비트"],
+      key:["음악 키","key","음악키"],
+      camelot:["camelot","캐멀롯","캐멀롯키"]
+    };
+    function mapHeaders(head){
+      const idx={};
+      for(const [norm,aliases] of Object.entries(headerAliases)){
+        let i = head.findIndex(h=> aliases.some(a=> h.trim().toLowerCase()===a.toLowerCase()));
+        if(i<0){ // heuristic fallbacks
+          if(norm==='file') i=head.findIndex(h=>/\.mp3|\.wav|\.flac/i.test(h));
+        }
+        idx[norm]=i;
+      }
+      return idx;
+    }
+
+    // --- Key → Camelot 매핑 ---
+    // 지원: #, b, 유니코드 ♯, ♭ 표기
+    const KEY_TO_CAMELOT=(()=>{
+      const m = new Map();
+      const add=(key,code)=>{ m.set(key.toLowerCase(),code); };
+      const alias=(from,to)=>{ m.set(from.toLowerCase(), m.get(to.toLowerCase())); };
+      // base (enharmonics merged)
+      add('ab minor','1A'); add('g# minor','1A'); add('b major','1B');
+      add('eb minor','2A'); add('d# minor','2A'); add('gb major','2B'); add('f# major','2B');
+      add('bb minor','3A'); add('a# minor','3A'); add('db major','3B'); add('c# major','3B');
+      add('f minor','4A');  add('ab major','4B'); add('g# major','4B');
+      add('c minor','5A');  add('eb major','5B'); add('d# major','5B');
+      add('g minor','6A');  add('bb major','6B'); add('a# major','6B');
+      add('d minor','7A');  add('f major','7B');
+      add('a minor','8A');  add('c major','8B');
+      add('e minor','9A');  add('g major','9B');
+      add('b minor','10A'); add('d major','10B');
+      add('f# minor','11A'); add('gb minor','11A'); add('a major','11B');
+      add('c# minor','12A'); add('db minor','12A'); add('e major','12B');
+      // unicode ♯/♭ aliases
+      const replaceUF = s=> s.replace(/♯/g,'#').replace(/♭/g,'b');
+      // expose helper with unicode sanitize
+      return {
+        get(code){ return m.get(replaceUF(code).toLowerCase()); },
+        normalizeKey(k){ return replaceUF(k).trim().toLowerCase(); }
+      }
+    })();
+
+    function camelotFromKey(key){
+      if(!key) return null;
+      const k = KEY_TO_CAMELOT.normalizeKey(key);
+      // enforce suffix words major/minor present
+      // ex: "C#m", "Eb maj" → normalize
+      const m = k
+        .replace(/\bmaj(?:or)?\b/g,'major')
+        .replace(/\bmin(?:or)?\b/g,'minor')
+        .replace(/([a-g][#b]?)(\s*m)\b/g,(a,p1)=> p1+" minor")
+        .replace(/([a-g][#b]?)(\s*maj)\b/g,(a,p1)=> p1+" major")
+        .replace(/^([a-g][#b]?)(?!\s*(major|minor))\b/,(a,p1)=> p1); // leave as-is
+      const got = KEY_TO_CAMELOT.get(m);
+      return got || null;
+    }
+
+    // Camelot utils
+    function parseCamelot(c){
+      if(!c) return null;
+      const m = String(c).trim().toUpperCase().match(/^(1[0-2]|[1-9])\s*([AB])$/);
+      if(!m) return null; 
+      return {n:parseInt(m[1],10), ab:m[2]};
+    }
+    function ringDistance(a,b){
+      const d=Math.abs(a-b); return Math.min(d,12-d);
+    }
+
+    // 유사도 계산
+    function bpmScore(a,b){
+      if(a==null||b==null||isNaN(a)||isNaN(b)) return 0; 
+      const diff=Math.abs(a-b);
+      // within 0..30 → 1..0 선형
+      return Math.max(0, 1 - diff/30);
+    }
+    function camelotScore(c1,c2){
+      if(!c1||!c2) return 0; 
+      if(c1.n===c2.n && c1.ab===c2.ab) return 1.0; // same
+      if(c1.n===c2.n && c1.ab!==c2.ab) return 0.9; // relative major/minor
+      const d=ringDistance(c1.n,c2.n);
+      if(d===1 && c1.ab===c2.ab) return 0.85; // adjacent ring same mode
+      if(d===1 && c1.ab!==c2.ab) return 0.75; // adjacent ring rel. flip
+      if(d===2 && c1.ab===c2.ab) return 0.6;  // two steps same mode
+      return 0.3;
+    }
+    function keyScore(k1,k2){
+      if(!k1||!k2) return 0; 
+      const n1=(k1||'').trim().toLowerCase();
+      const n2=(k2||'').trim().toLowerCase();
+      if(n1===n2) return 1.0; // exact textual match
+      // use camelot relation heuristic
+      const c1 = parseCamelot(camelotFromKey(k1));
+      const c2 = parseCamelot(camelotFromKey(k2));
+      if(c1 && c2){
+        if(c1.n===c2.n && c1.ab!==c2.ab) return 0.9; // relative M/m
+        const d=ringDistance(c1.n,c2.n);
+        if(d===1) return 0.7; // closely related
+        if(d===2) return 0.5; // moderately related
+      }
+      return 0.25; // distant
+    }
+
+    function normalizeWeights(wBpm,wCam,wKey){
+      let s = (wBpm||0)+(wCam||0)+(wKey||0); if(s<=0){return {b:0.33,c:0.34,k:0.33};}
+      return {b:wBpm/s,c:wCam/s,k:wKey/s};
+    }
+
+    // CSV 로드/표시 상태
+    const csvInput=document.getElementById('csvInput');
+    const trackSelect=document.getElementById('trackSelect');
+    const resultTable=document.getElementById('resultTable').querySelector('tbody');
+    const statusEl=document.getElementById('status');
+    const countEl=document.getElementById('count');
+    const anchorEl=document.getElementById('anchor');
+    const searchBox=document.getElementById('searchBox');
+
+    let rows=[]; // normalized objects
+
+    csvInput.addEventListener('change', async (e)=>{
+      const file=e.target.files?.[0]; if(!file) return;
+      const text=await file.text();
+      const table=parseCSV(text).filter(r=> r.length && r.join('').trim()!=='' );
+      if(table.length===0){ status('CSV에 데이터가 없습니다.', true); return; }
+      const header=table[0];
+      const idx=mapHeaders(header);
+      const out=[];
+      for(let i=1;i<table.length;i++){
+        const r=table[i];
+        const get=(id)=> (idx[id]!==-1 && r[idx[id]]!==undefined) ? r[idx[id]].trim() : '';
+        const obj={
+          file:get('file')||'',
+          artist:get('artist')||'',
+          title:get('title')||'',
+          bpm: toNum(get('bpm')),
+          key: (get('key')||'').trim(),
+          camelot: (get('camelot')||'').trim()
+        };
+        if(!obj.camelot){
+          const c = camelotFromKey(obj.key); if(c) obj.camelot=c+" *"; // * inferred
+        }
+        out.push(obj);
+      }
+      rows=out.filter(r=> r.file||r.title||r.artist); 
+      fillTrackSelect(rows);
+      countEl.textContent=String(rows.length);
+      status(`${file.name} 로드 완료. 추정 Camelot: '*' 표기`, false);
+    });
+
+    function toNum(v){
+      if(v==null) return null; const n=parseFloat(String(v).replace(/[^0-9.\-]/g,'')); return Number.isFinite(n)?n:null;
+    }
+
+    function status(msg,isErr){
+      statusEl.textContent=msg; statusEl.style.color=isErr? 'var(--danger)': 'var(--accent2)';
+    }
+
+    function fillTrackSelect(data){
+      trackSelect.innerHTML='';
+      const opt=document.createElement('option'); opt.textContent='기준 곡을 선택하세요'; opt.value='';
+      trackSelect.appendChild(opt);
+      data.forEach((r,i)=>{
+        const o=document.createElement('option');
+        o.value=String(i);
+        const label = (r.title? r.title+ ' - ': '') + (r.artist||'') || r.file || `row ${i+1}`;
+        o.textContent = label || '(제목 없음)';
+        trackSelect.appendChild(o);
+      });
+      trackSelect.disabled=false;
+      anchorEl.textContent='-';
+      resultTable.innerHTML='';
+    }
+
+    function compute(){
+      const idx = parseInt(trackSelect.value,10);
+      if(Number.isNaN(idx)) { status('기준 곡을 선택하세요.', true); return; }
+      const anchor = rows[idx];
+      anchorEl.textContent = (anchor.title? anchor.title: anchor.file) + (anchor.artist? ` / ${anchor.artist}`:'');
+
+      const w=normalizeWeights(parseFloat(document.getElementById('wBpm').value), parseFloat(document.getElementById('wCamelot').value), parseFloat(document.getElementById('wKey').value));
+
+      const c1 = parseCamelot((anchor.camelot||'').replace('*','').trim()) || parseCamelot(camelotFromKey(anchor.key));
+
+      const filtered = rows.filter((r,i)=> i!==idx).filter(r=>{
+        const q = searchBox.value.trim().toLowerCase();
+        if(!q) return true;
+        const hay=[r.file,r.artist,r.title].join(' ').toLowerCase();
+        return hay.includes(q);
+      }).map(r=>{
+        const c2 = parseCamelot((r.camelot||'').replace('*','').trim()) || parseCamelot(camelotFromKey(r.key));
+        const sBpm = bpmScore(anchor.bpm, r.bpm);
+        const sCam = camelotScore(c1,c2);
+        const sKey = keyScore(anchor.key, r.key);
+        const score = w.b*sBpm + w.c*sCam + w.k*sKey;
+        return { ...r, score, sBpm, sCam, sKey, _c: c2? `${c2.n}${c2.ab}${/\*/.test(r.camelot||'')?'*':''}`: (r.camelot||'') };
+      }).sort((a,b)=> b.score - a.score);
+
+      renderTable(filtered);
+    }
+
+    function renderTable(list){
+      resultTable.innerHTML='';
+      list.forEach((r,i)=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML=`
+          <td>${i+1}</td>
+          <td>${escapeHtml(r.file||'')}</td>
+          <td>${escapeHtml(r.artist||'')}</td>
+          <td>${escapeHtml(r.title||'')}</td>
+          <td class="right">${r.bpm ?? ''}</td>
+          <td>${escapeHtml(r.key||'')}</td>
+          <td>${escapeHtml(r._c || r.camelot || '')}</td>
+          <td class="right">${r.score.toFixed(3)}</td>
+          <td>
+            <span class="pill">BPM ${r.sBpm.toFixed(2)}</span>
+            <span class="pill">Camelot ${r.sCam.toFixed(2)}</span>
+            <span class="pill">Key ${r.sKey.toFixed(2)}</span>
+          </td>
+        `;
+        resultTable.appendChild(tr);
+      });
+    }
+
+    function escapeHtml(s){
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // Export
+    function exportCSV(){
+      const th=[...document.querySelectorAll('#resultTable thead th')].map(th=>th.textContent.trim());
+      const rows=[...document.querySelectorAll('#resultTable tbody tr')].map(tr=>[...tr.children].map(td=> td.textContent.replace(/\n/g,' ').trim()));
+      const csv = [th, ...rows].map(r=> r.map(cell=> /[",\n]/.test(cell) ? '"'+cell.replace(/"/g,'""')+'"' : cell).join(',')).join('\n');
+      const blob=new Blob(["\ufeff"+csv],{type:'text/csv;charset=utf-8;'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='similarity_results.csv'; a.click();
+    }
+
+    document.getElementById('computeBtn').addEventListener('click', compute);
+    document.getElementById('exportBtn').addEventListener('click', exportCSV);
+    searchBox.addEventListener('input', ()=>{ if(trackSelect.value) compute(); });
+  </script>
+</body>
+</html>
