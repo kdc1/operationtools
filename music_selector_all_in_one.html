@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>음원 선곡 도우미 | 폴더 스캔 + CSV 유사곡 정렬 + 대기열 ZIP/복사</title>
+  <style>
+    :root{
+      --gap:12px; --muted:#6b7280; --border:#e5e7eb; --bg:#0f1220; --panel:#ffffff; --text:#111827;
+      --accent:#111; --accentText:#fff; --badgeBg:#f3f4f6; --ok:#10b981; --warn:#f59e0b; --danger:#ef4444;
+    }
+    *{box-sizing:border-box}
+    body{margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple SD Gothic Neo","Noto Sans KR",sans-serif; color:var(--text); background:linear-gradient(180deg,#f9fafb,#f3f4f6)}
+    header{position:sticky; top:0; z-index:40; background:rgba(255,255,255,.85); backdrop-filter:saturate(140%) blur(6px); border-bottom:1px solid var(--border)}
+    .wrap{max-width:1200px; margin:0 auto; padding:16px}
+    h1{font-size:20px; margin:0 0 4px}
+    .sub{font-size:13px; color:var(--muted)}
+    .toolbar{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px}
+    button{padding:8px 12px; border-radius:10px; border:1px solid #ccc; background:#fff; cursor:pointer}
+    button.primary{background:var(--accent); color:var(--accentText); border-color:var(--accent)}
+    button.ghost{background:transparent}
+    button:disabled{opacity:.6; cursor:not-allowed}
+    input[type="text"], input[type="number"], select, input[type="file"]{padding:9px 10px; border-radius:10px; border:1px solid #ddd; background:#fff; min-width:200px}
+    .kbd{padding:1px 6px; border:1px solid #ddd; border-bottom-width:2px; border-radius:6px; font-family: ui-monospace,monospace; font-size:12px;}
+    .grid{display:grid; gap:16px; grid-template-columns:1fr; margin:16px 0}
+    @media (min-width: 1100px){ .grid{grid-template-columns: 1.1fr 1.7fr 1.2fr} }
+    .panel{background:#fff; border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:0 4px 14px rgba(0,0,0,.04)}
+    .panel h3{margin:0 0 6px; font-size:16px}
+    .row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+    .folders, .csvs{margin-top:8px; font-size:14px; color:#444}
+    .chip{display:inline-flex; align-items:center; gap:6px; border:1px solid #ddd; padding:4px 8px; border-radius:999px; margin:2px; background:#fafafa}
+    .chip button{border:none; background:transparent; cursor:pointer; color:#777}
+    .list{max-height:460px; overflow:auto; border:1px solid var(--border); border-radius:10px; background:#fff}
+    .item{display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-bottom:1px solid #f3f4f6; gap:8px}
+    .item:last-child{border-bottom:none}
+    .path{font-family: ui-monospace,Menlo,Consolas,"SF Mono",monospace; font-size:12px; color:#111}
+    .tag{font-size:12px; color:#666}
+    .actions{display:flex; gap:6px}
+    audio{width:100%; margin-top:8px}
+    .muted{color:var(--muted); font-size:12px}
+    .stats{font-size:12px; color:#444}
+    .split{display:flex; justify-content:space-between; align-items:center}
+
+    table{width:100%; border-collapse:collapse; margin-top:8px}
+    th, td{padding:8px 8px; border-bottom:1px solid #eef0f3; font-size:13px; text-align:left}
+    th{font-size:12px; color:#6b7280}
+    tr:hover{background:#fafafa}
+    .right{text-align:right}
+    .pill{display:inline-block; padding:3px 8px; border-radius:999px; background:#f3f4f6; border:1px solid #e5e7eb; font-size:12px}
+    .badge{display:inline-flex; gap:6px; align-items:center; font-size:11px; padding:4px 8px; border:1px solid #e5e7eb; border-radius:999px; background:#fafafa; color:#374151}
+    .ok{color:#047857}
+    .warn{color:#b45309}
+    .danger{color:#b91c1c}
+
+    /* Progress UI */
+    .progress{margin-top:10px; border:1px solid var(--border); border-radius:10px; padding:10px; background:#fafafa}
+    .barWrap{height:10px; background:#eaeaea; border-radius:999px; overflow:hidden}
+    .bar{height:100%; width:0%; background:#111; transition:width .2s}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>음원 선곡 도우미</h1>
+      <div class="sub">폴더 스캔·검색/재생 → CSV 유사곡 정렬(BPM+Camelot+Key) → 대기열 → ZIP/폴더 복사</div>
+      <div class="toolbar">
+        <button id="addFolder" class="primary">+ 폴더 추가</button>
+        <button id="scan">스캔</button><span class="muted">(단축키 <span class="kbd">S</span>)</span>
+        <input id="csvInput" type="file" accept=".csv" multiple />
+        <span class="muted">브라우저는 NAS/SMB에 직접 접속하지 않으며, OS에 <b>마운트된 드라이브</b>를 사용자가 선택하여 읽습니다.</span>
+      </div>
+      <div class="split">
+        <div>
+          <div id="folders" class="folders"></div>
+          <div id="csvFiles" class="csvs"></div>
+        </div>
+        <div class="stats">
+          <span id="fileStats">파일 0개</span> · <span id="csvStats">CSV 트랙 0개</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="grid">
+      <!-- 1) 파일 탐색/검색 -->
+      <section class="panel">
+        <div class="split">
+          <h3>파일 탐색 · 검색</h3>
+          <div class="muted" id="scanStats"></div>
+        </div>
+        <div class="row" style="margin:6px 0 8px 0">
+          <input id="fileFilter" type="text" placeholder="파일명/경로 키워드" />
+          <label class="muted"><input type="checkbox" id="fileExact"> 정확 일치</label>
+        </div>
+        <div id="fileResults" class="list" aria-label="스캔 결과"></div>
+        <audio id="player" controls preload="metadata"></audio>
+      </section>
+
+      <!-- 2) 유사곡 정렬 -->
+      <section class="panel">
+        <div class="split">
+          <h3>유사곡 정렬 (BPM + Camelot + Key)</h3>
+          <div class="muted">가중치 합은 자동 정규화</div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <select id="trackSelect" disabled>
+            <option>먼저 CSV를 추가하세요</option>
+          </select>
+          <input type="text" id="simFilter" placeholder="파일/아티스트/트랙 필터" />
+          <label class="muted"><input type="checkbox" id="onlyAvailable"> 스캔된 파일만</label>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <span class="badge">BPM <input style="width:68px; margin-left:6px" type="number" id="wBpm" min="0" max="1" step="0.05" value="0.35"></span>
+          <span class="badge">Camelot <input style="width:68px; margin-left:6px" type="number" id="wCamelot" min="0" max="1" step="0.05" value="0.40"></span>
+          <span class="badge">Key <input style="width:68px; margin-left:6px" type="number" id="wKey" min="0" max="1" step="0.05" value="0.25"></span>
+          <button id="computeBtn">유사 곡 정렬</button>
+          <button id="exportSimBtn" class="ghost">표 CSV 내보내기</button>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <span class="badge">불러온 트랙 수: <span id="count">0</span></span>
+          <span class="badge">기준 곡: <span id="anchor">-</span></span>
+        </div>
+
+        <table>
+          <thead>
+          <tr>
+            <th>#</th>
+            <th>파일</th>
+            <th>아티스트</th>
+            <th>트랙</th>
+            <th class="right">BPM</th>
+            <th>Key</th>
+            <th>Camelot(추정)</th>
+            <th class="right">유사도</th>
+            <th>상태</th>
+            <th>액션</th>
+          </tr>
+          </thead>
+          <tbody id="simBody"></tbody>
+        </table>
+        <div class="muted" style="margin-top:6px">Camelot 기준: 동일(1.0) · 같은 번호 A/B 전환(0.9) · 인접(같은 글자 0.85 / 전환 0.75) · 두 칸(같은 글자 0.6) · 기타(0.3)</div>
+      </section>
+
+      <!-- 3) 대기열/내보내기 -->
+      <section class="panel">
+        <h3>대기열</h3>
+        <div class="row" style="flex-wrap:wrap; gap:8px; margin:6px 0 8px 0;">
+          <button id="qPlayAll">▶ 전체 재생</button>
+          <button id="qPrev">⟨ 이전</button>
+          <button id="qNext">다음 ⟩</button>
+          <button id="qStop" class="ghost">정지</button>
+          <span class="muted" id="nowPlaying">–</span>
+        </div>
+        <div id="queue" class="list" aria-label="대기열"></div>
+
+        <div class="row" style="margin-top:8px; flex-wrap:wrap">
+          <label>시작 번호 <input id="startNum" type="number" value="1" min="1" style="width:90px"></label>
+          <label>자릿수 <input id="pad" type="number" value="2" min="1" max="6" style="width:90px"></label>
+          <input id="prefix" type="text" placeholder="선택: 접두사 (예: MyMix_)" />
+        </div>
+        <div class="row" style="margin-top:8px; flex-wrap:wrap">
+          <button id="exportZip">ZIP 다운로드</button>
+          <button id="copyToDir">폴더로 복사</button>
+          <button id="clearQueue" class="ghost">대기열 비우기</button>
+        </div>
+
+        <div id="zipProg" class="progress" hidden>
+          <div class="split"><strong>ZIP 생성</strong><span id="zipPct" class="muted">0%</span></div>
+          <div class="barWrap"><div id="zipBar" class="bar"></div></div>
+          <div id="zipStatus" class="muted" style="margin-top:6px;">대기 중…</div>
+        </div>
+        <div id="copyProg" class="progress" hidden>
+          <div class="split"><strong>복사</strong><span id="copyPct" class="muted">0%</span></div>
+          <div class="barWrap"><div id="copyBar" class="bar"></div></div>
+          <div id="copyStatus" class="muted" style="margin-top:6px;">대기 중…</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+  // ===== 공통 유틸 =====
+  const $ = s=>document.querySelector(s);
+  const AUDIO_EXTS = new Set(['.mp3']); // 필요 시 확장 가능
+  function ext(name){ const i=name.lastIndexOf('.'); return i>=0 ? name.slice(i).toLowerCase() : ''; }
+  function base(name){ const i=name.lastIndexOf('.'); return i>=0 ? name.slice(0,i) : name; }
+  function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+  function padNum(n, width){ const s=String(n); return s.length>=width ? s : '0'.repeat(width-s.length)+s; }
+  function normAlpha(s){ return String(s||'').toLowerCase().replace(/[\s_\-\(\)\[\]\{\}]/g,'').replace(/\.(mp3|wav|flac|aiff|m4a)$/,''); }
+  function lastSeg(p){ return String(p||'').split(/[\\/]/).pop(); }
+
+  // ===== 1) 폴더 스캔/검색 =====
+  const foldersEl = $('#folders');
+  const fileResultsEl = $('#fileResults');
+  const fileFilter = $('#fileFilter');
+  const fileExact = $('#fileExact');
+  const player = $('#player');
+  const fileStats = $('#fileStats');
+  const scanStats = $('#scanStats');
+
+  let dirHandles = [];   // [{handle, label}]
+  let items = [];        // 스캔: {name, rel, handle, fullPath, dirLabel}
+  let queue = [];        // 대기열은 항상 items의 원소를 담음
+  let qIndex = -1, qPlaying = false;
+
+  function renderFolders(){
+    foldersEl.innerHTML = dirHandles.length? '' : '선택된 폴더 없음';
+    for (const d of dirHandles){
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = `<span>📁 ${escapeHtml(d.label)}</span>`;
+      const rm = document.createElement('button');
+      rm.textContent = '×'; rm.title = '제거';
+      rm.onclick = ()=>{ dirHandles = dirHandles.filter(x=>x!==d); renderFolders(); };
+      chip.appendChild(rm); foldersEl.appendChild(chip);
+    }
+  }
+
+  async function* walk(dirHandle, baseRel=''){
+    for await (const [name, handle] of dirHandle.entries()){
+      const rel = baseRel ? `${baseRel}/${name}` : name;
+      if (handle.kind === 'directory') { yield* walk(handle, rel); }
+      else if (handle.kind === 'file' && AUDIO_EXTS.has(ext(name))) { yield {name, rel, handle}; }
+    }
+  }
+
+  async function scanAll(){
+    items = [];
+    const t0 = performance.now();
+    for (const d of dirHandles){
+      for await (const it of walk(d.handle)){
+        items.push({ ...it, dirLabel: d.label, fullPath: `${d.label}/${it.rel}` });
+      }
+    }
+    // 인덱스/매칭 갱신
+    buildItemIndex();
+    linkCsvToFiles();
+    renderFileResults();
+    fileStats.textContent = `파일 ${items.length}개`;
+    scanStats.textContent = `스캔 완료 (${(performance.now()-t0|0)}ms)`;
+  }
+
+  function matchesFileFilter(item){
+    const q = (fileFilter.value||'').trim();
+    if (!q) return true;
+    if (fileExact.checked) return item.name.toLowerCase() === q.toLowerCase() || item.rel.toLowerCase() === q.toLowerCase();
+    const low = q.toLowerCase();
+    return item.name.toLowerCase().includes(low) || item.rel.toLowerCase().includes(low);
+  }
+
+  function renderFileResults(){
+    fileResultsEl.innerHTML = '';
+    const list = items.filter(matchesFileFilter);
+    $('#scanStats').textContent = `${list.length}개 항목 / 전체 ${items.length}개`;
+    for (const e of list){
+      const row = document.createElement('div');
+      row.className = 'item';
+
+      const meta = e._csv ? [
+        e._csv.bpm!=null ? `BPM ${e._csv.bpm}` : '',
+        e._csv.key ? `Key ${e._csv.key}` : '',
+        e._csv._c || e._csv.camelot ? `Camelot ${(e._csv._c||e._csv.camelot)}` : ''
+      ].filter(Boolean).join(' · ') : '메타 없음';
+
+      row.innerHTML = `
+        <div>
+          <div>🎵 <span class="path">${escapeHtml(e.name)}</span></div>
+          <div class="tag">${escapeHtml(e.fullPath)}</div>
+          <div class="muted">${escapeHtml(meta)}</div>
+        </div>
+      `;
+      const actions = document.createElement('div');
+      actions.className='actions';
+      const playBtn = document.createElement('button'); playBtn.textContent='재생';
+      playBtn.onclick = async ()=>{ const file=await e.handle.getFile(); const url=URL.createObjectURL(file); player.src=url; player.play(); };
+      const addBtn = document.createElement('button'); addBtn.textContent='대기열 추가';
+      addBtn.onclick = ()=>{ queue.push(e); renderQueue(); };
+      const anchorBtn = document.createElement('button'); anchorBtn.textContent='기준 곡';
+      anchorBtn.title='이 파일과 매칭된 CSV 메타 기준으로 유사곡 정렬';
+      anchorBtn.onclick = ()=>{
+        if (e._csvIndex != null){ trackSelect.value = String(e._csvIndex); computeSimilar(); }
+        else { alert('이 파일과 매칭된 CSV 메타가 없습니다. CSV를 추가하거나 파일명/열 "파일" 값을 확인하세요.'); }
+      };
+      actions.append(playBtn, addBtn, anchorBtn);
+      row.appendChild(actions);
+      fileResultsEl.appendChild(row);
+    }
+  }
+
+  // ===== 2) CSV 로드/유사도 계산 =====
+  const csvInput = $('#csvInput');
+  const trackSelect = $('#trackSelect');
+  const simFilter = $('#simFilter');
+  const onlyAvailable = $('#onlyAvailable');
+  const simBody = $('#simBody');
+  const countEl = $('#count');
+  const anchorEl = $('#anchor');
+  const csvFilesEl = $('#csvFiles');
+  const csvStatsEl = $('#csvStats');
+
+  let rows = []; // 모든 CSV 합본 (정규화 객체)
+  let csvFileChips = []; // 표시용
+  let itemIndexByName = new Map(); // "name.ext" -> [item...]
+  let itemIndexByBase = new Map(); // "basename" -> [item...]
+  let itemIndexByNorm = new Map(); // normalized alpha -> [item...]
+
+  csvInput.addEventListener('change', async (e)=>{
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    for (const f of files){
+      const text = await f.text();
+      const table = parseCSV(text).filter(r=> r.length && r.join('').trim()!=='');
+      if (!table.length) continue;
+      const header = table[0];
+      const idx = mapHeaders(header);
+      for (let i=1; i<table.length; i++){
+        const r = table[i];
+        const get = (id)=> (idx[id]!==-1 && r[idx[id]]!==undefined) ? r[idx[id]].trim() : '';
+        const rec = {
+          file: get('file') || '',
+          artist: get('artist') || '',
+          title: get('title') || '',
+          bpm: toNum(get('bpm')),
+          key: (get('key')||'').trim(),
+          camelot: (get('camelot')||'').trim(),
+          _src: f.name
+        };
+        if(!rec.camelot){
+          const c = camelotFromKey(rec.key); if(c) rec.camelot = c + ' *';
+        }
+        rows.push(rec);
+      }
+      addCsvChip(f.name);
+    }
+    // 매칭/선택 갱신
+    linkCsvToFiles();
+    fillTrackSelect(rows);
+    countEl.textContent = String(rows.length);
+    csvStatsEl.textContent = `CSV 트랙 ${rows.length}개`;
+    e.target.value = ''; // 동일 CSV 다시 추가 가능하도록 초기화
+  });
+
+  function addCsvChip(name){
+    const chip=document.createElement('span');
+    chip.className='chip';
+    chip.innerHTML = `<span>📄 ${escapeHtml(name)}</span>`;
+    const rm=document.createElement('button'); rm.textContent='×'; rm.title='표시만 제거 (데이터는 유지)';
+    rm.onclick=()=> chip.remove();
+    chip.appendChild(rm);
+    csvFilesEl.appendChild(chip);
+  }
+
+  function toNum(v){ if(v==null) return null; const n=parseFloat(String(v).replace(/[^0-9.\-]/g,'')); return Number.isFinite(n)? n : null; }
+
+  function fillTrackSelect(data){
+    trackSelect.innerHTML='';
+    const opt=document.createElement('option'); opt.textContent='기준 곡을 선택하세요'; opt.value=''; trackSelect.appendChild(opt);
+    data.forEach((r,i)=>{
+      const o=document.createElement('option');
+      o.value=String(i);
+      const label = (r.title ? r.title+' - ' : '') + (r.artist || '') || r.file || `row ${i+1}`;
+      o.textContent = label || '(제목 없음)';
+      trackSelect.appendChild(o);
+    });
+    trackSelect.disabled = false;
+    anchorEl.textContent='-';
+    simBody.innerHTML='';
+  }
+
+  // === CSV 파서/헤더 매핑/Key→Camelot/스코어 ===
+  function parseCSV(text){
+    const rows=[]; let cur=[], field="", inQ=false;
+    for(let i=0;i<text.length;i++){
+      const c=text[i], n=text[i+1];
+      if(c==='"'){ if(inQ && n==='"'){ field+='"'; i++; } else { inQ=!inQ; } }
+      else if(c===',' && !inQ){ cur.push(field); field=""; }
+      else if((c==='\n'||c==='\r') && !inQ){ if(field!==""||cur.length>0){cur.push(field); rows.push(cur); cur=[]; field="";} }
+      else { field+=c; }
+    }
+    if(field!==""||cur.length>0){cur.push(field); rows.push(cur);}
+    return rows;
+  }
+  const headerAliases = {
+    file:["파일","file","파일명","filename","track file","path"],
+    artist:["아티스트 이름","artist","가수","singer"],
+    title:["트랙 제목","title","track","곡명"],
+    bpm:["비트/분","bpm","tempo","비트"],
+    key:["음악 키","key","음악키"],
+    camelot:["camelot","캐멀롯","캐멀롯키"]
+  };
+  function mapHeaders(head){
+    const idx={};
+    for(const [norm,aliases] of Object.entries(headerAliases)){
+      let i=head.findIndex(h=> aliases.some(a=> h.trim().toLowerCase()===a.toLowerCase()));
+      if(i<0 && norm==='file'){ i=head.findIndex(h=>/\.mp3|\.wav|\.flac|\.aiff|\.m4a/i.test(h)); }
+      idx[norm]= i===-1? -1 : i;
+    }
+    return idx;
+  }
+
+  // Key→Camelot 매핑(♯/♭/영문 maj/min 변형 처리)
+  const KEY_TO_CAMELOT=(()=>{
+    const m=new Map();
+    const add=(k,c)=>m.set(k.toLowerCase(),c);
+    add('ab minor','1A'); add('g# minor','1A'); add('b major','1B');
+    add('eb minor','2A'); add('d# minor','2A'); add('gb major','2B'); add('f# major','2B');
+    add('bb minor','3A'); add('a# minor','3A'); add('db major','3B'); add('c# major','3B');
+    add('f minor','4A'); add('ab major','4B'); add('g# major','4B');
+    add('c minor','5A'); add('eb major','5B'); add('d# major','5B');
+    add('g minor','6A'); add('bb major','6B'); add('a# major','6B');
+    add('d minor','7A'); add('f major','7B');
+    add('a minor','8A'); add('c major','8B');
+    add('e minor','9A'); add('g major','9B');
+    add('b minor','10A'); add('d major','10B');
+    add('f# minor','11A'); add('gb minor','11A'); add('a major','11B');
+    add('c# minor','12A'); add('db minor','12A'); add('e major','12B');
+    const repUF=s=>s.replace(/♯/g,'#').replace(/♭/g,'b');
+    return {
+      get(k){ return m.get(repUF(String(k||'')).toLowerCase()); },
+      normKey(k){
+        return repUF(String(k||'').trim().toLowerCase())
+          .replace(/\bmaj(?:or)?\b/g,'major')
+          .replace(/\bmin(?:or)?\b/g,'minor')
+          .replace(/([a-g][#b]?)(\s*m)\b/g,(a,p1)=> p1+' minor')
+          .replace(/([a-g][#b]?)(\s*maj)\b/g,(a,p1)=> p1+' major');
+      }
+    };
+  })();
+  function camelotFromKey(key){
+    if(!key) return null;
+    const n = KEY_TO_CAMELOT.normKey(key);
+    return KEY_TO_CAMELOT.get(n) || null;
+  }
+  function parseCamelot(c){
+    if(!c) return null;
+    const m=String(c).trim().toUpperCase().match(/^(1[0-2]|[1-9])\s*([AB])$/);
+    if(!m) return null;
+    return {n:parseInt(m[1],10), ab:m[2]};
+  }
+  function ringDistance(a,b){ const d=Math.abs(a-b); return Math.min(d,12-d); }
+  function bpmScore(a,b){ if(a==null||b==null||isNaN(a)||isNaN(b)) return 0; const diff=Math.abs(a-b); return Math.max(0, 1 - diff/30); }
+  function camelotScore(c1,c2){
+    if(!c1||!c2) return 0;
+    if(c1.n===c2.n && c1.ab===c2.ab) return 1.0;
+    if(c1.n===c2.n && c1.ab!==c2.ab) return 0.9;
+    const d=ringDistance(c1.n,c2.n);
+    if(d===1 && c1.ab===c2.ab) return 0.85;
+    if(d===1 && c1.ab!==c2.ab) return 0.75;
+    if(d===2 && c1.ab===c2.ab) return 0.6;
+    return 0.3;
+  }
+  function keyScore(k1,k2){
+    if(!k1||!k2) return 0;
+    const n1=String(k1).trim().toLowerCase(), n2=String(k2).trim().toLowerCase();
+    if(n1===n2) return 1.0;
+    const c1=parseCamelot(camelotFromKey(k1)), c2=parseCamelot(camelotFromKey(k2));
+    if(c1 && c2){
+      if(c1.n===c2.n && c1.ab!==c2.ab) return 0.9;
+      const d=ringDistance(c1.n,c2.n);
+      if(d===1) return 0.7;
+      if(d===2) return 0.5;
+    }
+    return 0.25;
+  }
+  function normalizeWeights(wBpm,wCam,wKey){
+    let s=(wBpm||0)+(wCam||0)+(wKey||0);
+    if(s<=0) return {b:0.33,c:0.34,k:0.33};
+    return {b:wBpm/s, c:wCam/s, k:wKey/s};
+  }
+
+  // === 스캔 결과 인덱싱 & CSV↔파일 매칭 ===
+  function buildItemIndex(){
+    itemIndexByName.clear(); itemIndexByBase.clear(); itemIndexByNorm.clear();
+    for(const it of items){
+      const k1 = it.name.toLowerCase();
+      const k2 = base(it.name).toLowerCase();
+      const k3 = normAlpha(base(it.name));
+      if(!itemIndexByName.has(k1)) itemIndexByName.set(k1, []);
+      if(!itemIndexByBase.has(k2)) itemIndexByBase.set(k2, []);
+      if(!itemIndexByNorm.has(k3)) itemIndexByNorm.set(k3, []);
+      itemIndexByName.get(k1).push(it);
+      itemIndexByBase.get(k2).push(it);
+      itemIndexByNorm.get(k3).push(it);
+      it._csv = null;
+      it._csvIndex = null;
+    }
+  }
+
+  function findCandidatesForRow(r){
+    const fileCell = r.file ? lastSeg(r.file) : '';
+    const hasExt = /\.[a-z0-9]{2,5}$/i.test(fileCell);
+    const b = base(fileCell).toLowerCase();
+    const nameLower = fileCell.toLowerCase();
+    const norm = normAlpha(b);
+
+    let cands = [];
+    if (hasExt && itemIndexByName.has(nameLower)) cands = cands.concat(itemIndexByName.get(nameLower));
+    if (itemIndexByBase.has(b)) cands = cands.concat(itemIndexByBase.get(b));
+    if (itemIndexByNorm.has(norm)) cands = cands.concat(itemIndexByNorm.get(norm));
+
+    // 중복 제거
+    cands = Array.from(new Set(cands));
+    return cands;
+  }
+
+  function linkCsvToFiles(){
+    // 모든 rows에 대해 후보 계산
+    rows.forEach((r, i)=>{
+      const cands = findCandidatesForRow(r);
+      r._matchCandidates = cands.length;
+      r._match = cands[0] || null;
+      r._c = (parseCamelot((r.camelot||'').replace('*','').trim()) || parseCamelot(camelotFromKey(r.key)))?.n
+               ? `${parseCamelot((r.camelot||'').replace('*','').trim())?.n}${parseCamelot((r.camelot||'').replace('*','').trim())?.ab || ''}${/\*/.test(r.camelot||'')?'*':''}`
+               : (r.camelot||'');
+      if (r._match){
+        r._match._csv = r;
+        r._match._csvIndex = i;
+      }
+    });
+    // 스캔 결과 화면에 메타 표시 갱신
+    renderFileResults();
+  }
+
+  // === 유사도 계산 / 렌더링 ===
+  function computeSimilar(){
+    const idx = parseInt(trackSelect.value,10);
+    if (Number.isNaN(idx)){ alert('기준 곡을 선택하세요.'); return; }
+    const anchor = rows[idx];
+    anchorEl.textContent = (anchor.title ? anchor.title : (anchor.file || '(무제)')) + (anchor.artist? ` / ${anchor.artist}` : '');
+
+    const w = normalizeWeights(parseFloat($('#wBpm').value), parseFloat($('#wCamelot').value), parseFloat($('#wKey').value));
+    const c1 = parseCamelot((anchor.camelot||'').replace('*','').trim()) || parseCamelot(camelotFromKey(anchor.key));
+
+    const q = (simFilter.value||'').trim().toLowerCase();
+    let list = rows.map((r,i)=>{
+      if (i===idx) return null;
+      if (q){
+        const hay=[r.file,r.artist,r.title].join(' ').toLowerCase();
+        if (!hay.includes(q)) return null;
+      }
+      if (onlyAvailable.checked && !r._match) return null;
+
+      const c2 = parseCamelot((r.camelot||'').replace('*','').trim()) || parseCamelot(camelotFromKey(r.key));
+      const sBpm = bpmScore(anchor.bpm, r.bpm);
+      const sCam = camelotScore(c1,c2);
+      const sKey = keyScore(anchor.key, r.key);
+      const score = w.b*sBpm + w.c*sCam + w.k*sKey;
+      return { ...r, _idx:i, score, sBpm, sCam, sKey, _c: c2? `${c2.n}${c2.ab}${/\*/.test(r.camelot||'')?'*':''}`: (r.camelot||'') };
+    }).filter(Boolean).sort((a,b)=> b.score - a.score);
+
+    renderSimTable(list);
+  }
+
+  function renderSimTable(list){
+    simBody.innerHTML='';
+    list.forEach((r,i)=>{
+      const tr=document.createElement('tr');
+      const status = r._match ? (r._matchCandidates>1 ? `연결됨(다중:${r._matchCandidates})` : '연결됨') : '미연결';
+      tr.innerHTML = `
+        <td>${i+1}</td>
+        <td title="${escapeHtml(r.file||'')}">${escapeHtml(lastSeg(r.file)||'')}</td>
+        <td>${escapeHtml(r.artist||'')}</td>
+        <td>${escapeHtml(r.title||'')}</td>
+        <td class="right">${r.bpm ?? ''}</td>
+        <td>${escapeHtml(r.key||'')}</td>
+        <td>${escapeHtml(r._c || r.camelot || '')}</td>
+        <td class="right">${r.score.toFixed(3)}</td>
+        <td class="${r._match? 'ok':'warn'}">${escapeHtml(status)}</td>
+        <td></td>
+      `;
+      const tdActions = tr.lastElementChild;
+      const btnPlay = document.createElement('button'); btnPlay.textContent='재생'; btnPlay.disabled = !r._match;
+      btnPlay.onclick = async ()=>{
+        const it = r._match;
+        if (!it){ alert('스캔된 실제 파일과 연결되지 않았습니다.'); return; }
+        const file=await it.handle.getFile(); const url=URL.createObjectURL(file); player.src=url; player.play();
+      };
+      const btnAdd = document.createElement('button'); btnAdd.textContent='대기열 추가'; btnAdd.disabled = !r._match;
+      btnAdd.onclick = ()=>{ if(r._match){ queue.push(r._match); renderQueue(); } };
+      const btnAnchor = document.createElement('button'); btnAnchor.textContent='기준 곡'; btnAnchor.onclick = ()=>{ trackSelect.value=String(r._idx); computeSimilar(); };
+      tdActions.append(btnPlay, btnAdd, btnAnchor);
+      simBody.appendChild(tr);
+    });
+  }
+
+  function exportSimCSV(){
+    const th = ["#", "파일", "아티스트", "트랙", "BPM", "Key", "Camelot", "유사도", "상태"];
+    const rowsCsv = [[...th]];
+    [...simBody.children].forEach((tr, i)=>{
+      const tds = [...tr.children];
+      rowsCsv.push(tds.slice(0,9).map(td=> td.textContent.trim()));
+    });
+    const csv = rowsCsv.map(r=> r.map(cell=> /[",\n]/.test(cell) ? `"${cell.replace(/"/g,'""')}"` : cell).join(',')).join('\n');
+    const blob=new Blob(["\ufeff"+csv],{type:'text/csv;charset=utf-8;'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='similarity_results.csv'; a.click();
+  }
+
+  // ===== 3) 대기열/내보내기 =====
+  const queueEl = $('#queue'); const nowPlayingEl=$('#nowPlaying');
+  const startNumEl=$('#startNum'); const padEl=$('#pad'); const prefixEl=$('#prefix');
+  const zipWrap=$('#zipProg'), zipBar=$('#zipBar'), zipPct=$('#zipPct'), zipStatus=$('#zipStatus');
+  const copyWrap=$('#copyProg'), copyBar=$('#copyBar'), copyPct=$('#copyPct'), copyStatus=$('#copyStatus');
+
+  function renderQueue(){
+    queueEl.innerHTML='';
+    if (!queue.length){ queueEl.innerHTML = '<div class="item"><span class="muted">대기열이 비어있습니다</span></div>'; nowPlayingEl.textContent='–'; return; }
+    queue.forEach((e, idx)=>{
+      const row=document.createElement('div'); row.className='item';
+      const isCurrent = (idx===qIndex && qPlaying);
+      row.innerHTML = `
+        <div>
+          <div>${isCurrent? '▶' : '#'}${idx+1} — <span class="path">${escapeHtml(e.name)}</span></div>
+          <div class="tag">${escapeHtml(e.fullPath)}</div>
+        </div>
+      `;
+      const actions=document.createElement('div'); actions.className='actions';
+      const up=document.createElement('button'); up.textContent='▲'; up.title='위로'; up.onclick = ()=>{ if(idx>0){ const t=queue[idx-1]; queue[idx-1]=queue[idx]; queue[idx]=t; if(qIndex===idx) qIndex=idx-1; else if(qIndex===idx-1) qIndex=idx; renderQueue(); } };
+      const down=document.createElement('button'); down.textContent='▼'; down.title='아래로'; down.onclick = ()=>{ if(idx<queue.length-1){ const t=queue[idx+1]; queue[idx+1]=queue[idx]; queue[idx]=t; if(qIndex===idx) qIndex=idx+1; else if(qIndex===idx+1) qIndex=idx; renderQueue(); } };
+      const del=document.createElement('button'); del.textContent='삭제'; del.onclick = ()=>{ queue.splice(idx,1); if(qIndex>=queue.length) qIndex=queue.length-1; renderQueue(); };
+      const playThis=document.createElement('button'); playThis.textContent='여기부터 재생'; playThis.onclick = ()=>{ qStart(idx); };
+      actions.append(up, down, del, playThis);
+      row.appendChild(actions);
+      queueEl.appendChild(row);
+    });
+  }
+
+  async function qPlayAt(idx){
+    if (idx<0 || idx>=queue.length){ nowPlayingEl.textContent='–'; qIndex=-1; qPlaying=false; return; }
+    qIndex=idx; qPlaying=true;
+    const e=queue[qIndex];
+    const file=await e.handle.getFile(); const url=URL.createObjectURL(file);
+    player.src=url; player.play();
+    nowPlayingEl.textContent = `재생 중: #${qIndex+1} ${e.name}`;
+    renderQueue();
+  }
+  function qNext(){ if(qIndex+1<queue.length) qPlayAt(qIndex+1); else { qPlaying=false; nowPlayingEl.textContent='종료'; } }
+  function qPrev(){ if(qIndex-1>=0) qPlayAt(qIndex-1); }
+  function qStart(start=0){ if(queue.length) qPlayAt(start); }
+  function qStop(){ qPlaying=false; nowPlayingEl.textContent='정지됨'; player.pause(); }
+  player.addEventListener('ended', ()=>{ if(qPlaying) qNext(); });
+
+  async function exportZip(){
+    if (!window.JSZip){ alert('JSZip 로더를 찾을 수 없습니다.'); return; }
+    if (!queue.length){ alert('대기열이 비어있습니다.'); return; }
+    setBusy(['exportZip','copyToDir','clearQueue'], true);
+    zipWrap.hidden=false; zipStatus.textContent='파일 준비 중…'; zipPct.textContent='0%'; zipBar.style.width='0%';
+
+    const start=Math.max(1, parseInt(startNumEl.value||'1',10));
+    const width=Math.max(1, parseInt(padEl.value||'2',10));
+    const px=prefixEl.value||'';
+
+    const zip=new JSZip(); let i=0;
+    for (const e of queue){
+      const file=await e.handle.getFile();
+      const num=padNum(start+i, width);
+      const outName=`${px}${num} - ${e.name}`;
+      zipStatus.textContent = `추가 중… (${i+1}/${queue.length}) ${outName}`;
+      const buf=await file.arrayBuffer();
+      zip.file(outName, buf);
+      i++;
+      const p1=Math.round((i/queue.length)*50); zipPct.textContent=p1+'%'; zipBar.style.width=p1+'%';
+    }
+    zipStatus.textContent='압축 파일 생성 중…';
+    const blob=await zip.generateAsync({type:'blob'}, (meta)=>{
+      const base=50; const p=base + Math.round((meta.percent||0)/2);
+      zipPct.textContent=p+'%'; zipBar.style.width=p+'%';
+    });
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(px||'playlist_')+Date.now()+'.zip'; a.click(); URL.revokeObjectURL(a.href);
+    zipStatus.textContent='완료! ZIP 다운로드가 시작되었습니다.';
+    setBusy(['exportZip','copyToDir','clearQueue'], false);
+  }
+
+  async function copyToDir(){
+    if (!queue.length){ alert('대기열이 비어있습니다.'); return; }
+    let dir;
+    try{ dir = await window.showDirectoryPicker({ mode:'readwrite' }); }
+    catch(e){ if(e && e.name==='AbortError') return; alert('대상 폴더 선택 실패: '+e); return; }
+
+    setBusy(['exportZip','copyToDir','clearQueue'], true);
+    copyWrap.hidden=false; copyStatus.textContent='복사 시작…'; copyPct.textContent='0%'; copyBar.style.width='0%';
+
+    const start=Math.max(1, parseInt(startNumEl.value||'1',10));
+    const width=Math.max(1, parseInt(padEl.value||'2',10));
+    const px=prefixEl.value||'';
+
+    let i=0;
+    for (const e of queue){
+      const num=padNum(start+i, width);
+      const outName=`${px}${num} - ${e.name}`;
+      copyStatus.textContent=`복사 중… (${i+1}/${queue.length}) ${outName}`;
+      const srcFile=await e.handle.getFile();
+      const destFile=await dir.getFileHandle(outName, { create:true });
+      const writable=await destFile.createWritable();
+      await writable.write(await srcFile.arrayBuffer());
+      await writable.close();
+      i++;
+      const p=Math.round((i/queue.length)*100); copyPct.textContent=p+'%'; copyBar.style.width=p+'%';
+    }
+    copyStatus.textContent='완료! 모든 파일이 복사되었습니다.';
+    setBusy(['exportZip','copyToDir','clearQueue'], false);
+  }
+
+  function setBusy(ids, busy){ ids.forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=busy; }); }
+
+  // ===== 이벤트 바인딩 =====
+  document.getElementById('addFolder').onclick = async ()=>{
+    try{
+      const h=await window.showDirectoryPicker({ mode:'read' });
+      dirHandles.push({ handle:h, label:h.name || 'Folder' });
+      renderFolders();
+    }catch(e){ /* cancel */ }
+  };
+  document.getElementById('scan').onclick = scanAll;
+  fileFilter.oninput = renderFileResults;
+  fileExact.onchange = renderFileResults;
+
+  // 유사곡
+  document.getElementById('computeBtn').onclick = computeSimilar;
+  simFilter.addEventListener('input', ()=>{ if(trackSelect.value) computeSimilar(); });
+  onlyAvailable.addEventListener('change', ()=>{ if(trackSelect.value) computeSimilar(); });
+  trackSelect.addEventListener('change', computeSimilar);
+  document.getElementById('exportSimBtn').onclick = exportSimCSV;
+
+  // 대기열
+  document.getElementById('qPlayAll').onclick = ()=> qStart(0);
+  document.getElementById('qPrev').onclick = qPrev;
+  document.getElementById('qNext').onclick = qNext;
+  document.getElementById('qStop').onclick = qStop;
+  document.getElementById('exportZip').onclick = exportZip;
+  document.getElementById('copyToDir').onclick = copyToDir;
+  document.getElementById('clearQueue').onclick = ()=>{ queue=[]; qIndex=-1; qPlaying=false; renderQueue(); };
+
+  // 단축키
+  document.addEventListener('keydown', (e)=>{
+    if (e.key.toLowerCase()==='s'){ e.preventDefault(); scanAll(); }
+  });
+
+  // 초기 렌더
+  renderFolders(); renderFileResults(); renderQueue();
+  </script>
+</body>
+</html>
