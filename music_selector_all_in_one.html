@@ -183,7 +183,7 @@
   <script>
   // ===== 공통 유틸 =====
   const $ = s=>document.querySelector(s);
-  const AUDIO_EXTS = new Set(['.mp3']); // 필요 시 확장 가능
+  const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff']); // 필요 시 확장 가능
   function ext(name){ const i=name.lastIndexOf('.'); return i>=0 ? name.slice(i).toLowerCase() : ''; }
   function base(name){ const i=name.lastIndexOf('.'); return i>=0 ? name.slice(0,i) : name; }
   function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
