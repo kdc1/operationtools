@@ -79,6 +79,8 @@
           <span id="fileStats">파일 0개</span> · <span id="csvStats">CSV 트랙 0개</span>
         </div>
       </div>
+      <div id="nowPlayingTrack" class="muted" style="text-align:center; padding: 4px 0;">–</div>
+      <audio id="player" controls preload="metadata" style="width: 100%; margin-top: 4px;"></audio>
     </div>
   </header>
 
@@ -95,7 +97,6 @@
           <label class="muted"><input type="checkbox" id="fileExact"> 정확 일치</label>
         </div>
         <div id="fileResults" class="list" aria-label="스캔 결과"></div>
-        <audio id="player" controls preload="metadata"></audio>
       </section>
 
       <!-- 2) 유사곡 정렬 -->
@@ -274,7 +275,7 @@
       const actions = document.createElement('div');
       actions.className='actions';
       const playBtn = document.createElement('button'); playBtn.textContent='재생';
-      playBtn.onclick = async ()=>{ const file=await e.handle.getFile(); const url=URL.createObjectURL(file); player.src=url; player.play(); };
+      playBtn.onclick = ()=>playFile(e);
       const addBtn = document.createElement('button'); addBtn.textContent='대기열 추가';
       addBtn.onclick = ()=>{ queue.push(e); renderQueue(); };
       const anchorBtn = document.createElement('button'); anchorBtn.textContent='기준 곡';
@@ -572,10 +573,10 @@
       `;
       const tdActions = tr.lastElementChild;
       const btnPlay = document.createElement('button'); btnPlay.textContent='재생'; btnPlay.disabled = !r._match;
-      btnPlay.onclick = async ()=>{
+      btnPlay.onclick = ()=>{
         const it = r._match;
         if (!it){ alert('스캔된 실제 파일과 연결되지 않았습니다.'); return; }
-        const file=await it.handle.getFile(); const url=URL.createObjectURL(file); player.src=url; player.play();
+        playFile(it);
       };
       const btnAdd = document.createElement('button'); btnAdd.textContent='대기열 추가'; btnAdd.disabled = !r._match;
       btnAdd.onclick = ()=>{ if(r._match){ queue.push(r._match); renderQueue(); } };
@@ -630,10 +631,19 @@
     if (idx<0 || idx>=queue.length){ nowPlayingEl.textContent='–'; qIndex=-1; qPlaying=false; return; }
     qIndex=idx; qPlaying=true;
     const e=queue[qIndex];
-    const file=await e.handle.getFile(); const url=URL.createObjectURL(file);
-    player.src=url; player.play();
-    nowPlayingEl.textContent = `재생 중: #${qIndex+1} ${e.name}`;
+    playFile(e, `재생 중: #${qIndex+1} ${e.name}`);
     renderQueue();
+  }
+
+  async function playFile(item, nowPlayingText){
+    const file = await item.handle.getFile();
+    const url = URL.createObjectURL(file);
+    player.src = url;
+    player.play();
+    $('#nowPlayingTrack').textContent = `현재 재생 중: ${item.name}`;
+    if (nowPlayingText) {
+      nowPlayingEl.textContent = nowPlayingText;
+    }
   }
   function qNext(){ if(qIndex+1<queue.length) qPlayAt(qIndex+1); else { qPlaying=false; nowPlayingEl.textContent='종료'; } }
   function qPrev(){ if(qIndex-1>=0) qPlayAt(qIndex-1); }
